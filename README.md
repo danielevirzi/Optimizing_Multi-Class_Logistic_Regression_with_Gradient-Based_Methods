@@ -1,4 +1,4 @@
-# Block Coordinate Gradient Descent Algorithms for Multi-Class Classification Problems  
+# Optimizing Multi-Class Logistic Regression with Gradient-Based Methods
 ## HOMEWORK OPTIMIZATION FOR DATA SCIENCE 2024  
 **MULTI-CLASS LOGISTIC REGRESSION**  
 
