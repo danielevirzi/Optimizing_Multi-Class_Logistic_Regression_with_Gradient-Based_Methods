@@ -21,5 +21,3 @@ where $x_c$ is column $c$ of matrix parameter $X \in \mathbb{R}^{d \times k}$ to
    - *BCDG with Gauss-Southwell rule*.
 7. Choose a pubicly available dataset and test methods on this.
 8. Analyze *Accuracy vs CPU Time*.
-9. Describe what you did on a PDF file.
-10. Submit project.
