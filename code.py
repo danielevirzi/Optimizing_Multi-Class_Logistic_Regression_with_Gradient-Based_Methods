@@ -417,3 +417,5 @@ accuracy_history_BCGD_R = [compute_accuracy(X, A, B, False) for X in update_hist
 
 print('Cost:', compute_cost(X_BCGD_GS, A, H, M, K))
 print('Time:', np.sum(time_history_BCGD_GS))
+
+plot_convergence(cost_history_BCGD_R, accuracy_history_BCGD_R)
