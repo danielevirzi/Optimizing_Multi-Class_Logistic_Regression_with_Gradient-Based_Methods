@@ -3,39 +3,31 @@
 import time
 import torch
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from ucimlrepo import fetch_ucirepo
-from sklearn.metrics import accuracy_score
+#from sklearn.model_selection import train_test_split
+#from sklearn.preprocessing import StandardScaler
+#from ucimlrepo import fetch_ucirepo
 
-
-
-
-###### Utils ######
-
-def Lipschitz_constant(A):
-    """Compute the Lipschitz constant of the logistic loss function"""
-    L = torch.norm(A, 2) * torch.norm(A, 'fro')
-    return L
-
-
-###### Datasets ######
 
 class SyntheticDataset:
-    def __init__(self, n_samples=1000, n_features=1000, n_classes=50, device='cuda'):
+    def __init__(self, n_samples=1000, n_features=1000, n_classes=50, seed=13):
         """
         Initialize synthetic dataset generator
         
         Args:
-            n_samples: number of samples
+            n_samples:  number of samples
             n_features: number of features
-            n_classes: number of classes
-            device: computation device
+            n_classes:  number of classes
+            seed:       random seed
         """
-        self.n_samples = n_samples
-        self.n_features = n_features
-        self.n_classes = n_classes
-        self.device = device
+        self.m = n_samples
+        self.d = n_features
+        self.k = n_classes
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.seed = seed
+        
+        # Set seed
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
         
         # Generate dataset
         self._generate_data()
@@ -44,88 +36,59 @@ class SyntheticDataset:
         """Generate synthetic data"""
         
         # Generate random input A
-        self.A = torch.randn(self.n_samples, self.n_features).to(self.device)
+        self.A = torch.randn(self.m, self.d).to(self.device)
         
         # Generate random matrix X
-        self.X = torch.randn(self.n_features, self.n_classes).to(self.device)
+        self.X = torch.randn(self.d, self.k).to(self.device)    
         
         # Generate random error matrix E
-        self.E = torch.randn(self.n_samples, self.n_classes).to(self.device)
+        self.E = torch.randn(self.m, self.k).to(self.device)
                 
         # Generate class labels
         Y = self.A @ self.X + self.E
-        self.B = torch.argmax(Y, dim=1) + 1
+        self.B = torch.argmax(Y, dim=1) + 1  # Add 1 to get a 1-based index
         
         # Create one-hot encoding matrix H
-        self.H = torch.nn.functional.one_hot(self.B - 1, num_classes=self.n_classes).float().to(self.device)
+        self.H = torch.nn.functional.one_hot(self.B - 1, num_classes=self.k).float().to(self.device)
         
         # Create ones vector M
-        self.M = torch.ones(1, self.n_samples).to(self.device)
+        self.M = torch.ones(1, self.m).to(self.device)
         
         # Create ones vector K
-        self.K = torch.ones(self.n_classes, 1).to(self.device)
+        self.K = torch.ones(self.k, 1).to(self.device)
         
-        
+        # Normalize weights with Xavier initialization for X_train
+        self.X_train = torch.randn(self.d, self.k).to(self.device) * torch.sqrt(torch.tensor(1 / self.d).to(self.device))
         
     def get_data(self):
         """Return all dataset components"""
-        return self.X, self.A, self.H, self.M, self.K, self.B
+        return self.X_train, self.A, self.H, self.M, self.K, self.B   
     
-    def to(self, device):
-        """Move dataset to specified device"""
-        self.device = device
-        self.X = self.X.to(device)
-        self.A = self.A.to(device)
-        self.H = self.H.to(device)
-        self.M = self.M.to(device)
-        self.K = self.K.to(device)
-        return self
-    
-    
-    
-    
-
-###### Model ######
-
 class LogisticRegression:
-    def __init__(self, alpha, num_iterations, epsilon, j, device='cuda'):
-        """
-        Initialize LogisticRegression optimizer
-        
-        Args:
-            alpha: learning rate
-            num_iterations: max iterations
-            epsilon: convergence threshold
-            j: number of blocks
-            device: computation device
-        """
-        
-        
-        # Initialize hyperparameters
+    def __init__(self, alpha, num_iterations, epsilon, j, device='cuda', seed=13):
         self.alpha = alpha
         self.num_iterations = num_iterations
         self.epsilon = epsilon
         self.j = j
         self.device = device
+        self.seed = seed
         
+        torch.manual_seed(self.seed)
+        torch.cuda.manual_seed(self.seed)
         
-        # Initialize tensors
         self.A = None
         self.X = None
         self.H = None
         self.M = None
         self.K = None
-        self.B = None
+        self.B = None 
         
-        
-        # History
         self.norm_history = []
         self.time_history = []
         self.update_history = []
         self.cost_history = []
         self.accuracy_history = []
-        
-        
+    
     @staticmethod
     def gradient(X, A, H, K):
         """
@@ -139,7 +102,6 @@ class LogisticRegression:
         
         Returns:
             Gradient tensor
-        
         """
 
         # Compute the exponential of A @ X
@@ -151,59 +113,56 @@ class LogisticRegression:
 
         return df_dX
     
-    
     @staticmethod    
     def gradient_block(X, A, H, K, index):
+            """
+            Compute the gradient of the loss function with respect to the index-th column of X.
+            
+            Args:
+                X: Input tensor
+                A: Matrix A
+                H: Matrix H
+                K: Ones tensor
+                index: Column index of X
+            
+            Returns:
+                Gradient tensor
+            """
+
+            # Select the index-th column of X
+            X_c = X[:, index:index+1]
+
+            # Compute the exponential of A @ X
+            exp_AX = torch.exp(A @ X)
+
+            # Compute the exponential of A @ X for the index-th column
+            exp_AX_c = torch.exp(A @ X_c)
+
+            # Select the index-th column of the one-hot matrix
+            H_c = H[:, index:index+1]
+
+            # Compute the derivative of the loss function with respect to X
+            df_dX_c = - A.T @ (H_c - (exp_AX_c * (1 / (exp_AX @ K))))  # Perform broadcasting between exp_AX and (1 / (exp_AX @ I))
+
+            return df_dX_c
+    
+    @staticmethod
+    def compute_cost(X, A, H, M, K):
         """
-        Compute the gradient of the loss function with respect to X for a block of columns.
+        Compute the cost function.
         
         Args:
             X: Input tensor
             A: Matrix A
             H: Matrix H
-            K: Ones tensor
-            index: Block index
-        
-        Returns:
-            Gradient tensor for a block of columns
-    
-        """
-        
-        # Select the index-th column of X
-        X_c = X[:, index:index+1]
-
-        # Compute the exponential of A @ X
-        exp_AX = torch.exp(A @ X)
-
-
-        # Compute the exponential of A @ X for the index-th column
-        exp_AX_c = torch.exp(A @ X_c)
-
-        # Select the index-th column of the one-hot matrix
-        H_c = H[:, index:index+1]
-
-        # Compute the derivative of the loss function with respect to X
-        df_dX_c = - A.T @ (H_c - (exp_AX_c * (1 / (exp_AX @ K))))  # Perform broadcasting between exp_AX and (1 / (exp_AX @ I))
-
-        return df_dX_c
-    
-    
-    @staticmethod
-    def compute_cost(X, A, H, M, K):
-        """
-        Compute the vectorized cost function using PyTorch operations.
-        
-        Args:
-            X: Input tensor
-            A: Matrix A
-            H: Matrix H 
-            M: Matrix M
+            M: Ones tensor
             K: Ones tensor
             
         Returns:
-            Cost value as a scalar
+            Cost value
         """
-        
+
+
         # Compute the exponential of AX
         exp_AX = torch.exp(A @ X)
 
@@ -218,42 +177,40 @@ class LogisticRegression:
 
         return cost.item()
     
-    
     @staticmethod
     def accuracy_score(y_true, y_pred):
         """
-        Compute accuracy score using PyTorch operations.
+        Compute the accuracy of the model.
         
         Args:
-            y_true: True class labels
-            y_pred: Predicted class labels
+            y_true: True labels
+            y_pred: Predicted labels
             
         Returns:
-            Accuracy score as a scalar
-        
+            Accuracy value
         """
+        
+        # Compute the accuracy of the model
         accuracy = torch.sum(y_true == y_pred).float() / y_true.shape[0]
+
         return accuracy.item()
     
-    
-    @staticmethod
-    def evaluate(X, A, B, index_0=True):
+    def evaluate(self, X, A, B, index_0=True):
         """
-        Evaluate the model using the accuracy score.
+        Evaluate the model.
         
         Args:
             X: Input tensor
             A: Matrix A
-            B: Class labels
-            index_0: Boolean to indicate if the class labels start from 0 or 1
+            B: True labels
+            index_0: Index of the true labels
         
         Returns:
-            Accuracy value as a scalar
-        
+            Accuracy value
         """
 
         # Compute the softmax of the matrix product
-        Y_pred = torch.nn.functional.softmax(A @ X, dim=1)
+        Y_pred = torch.nn.functional.softmax(A @ X, dim=0)
 
 
         if index_0 == True:
@@ -266,124 +223,154 @@ class LogisticRegression:
 
         # Compute the accuracy of the model
         
-        accuracy = accuracy_score(B, B_pred)
+        accuracy = self.accuracy_score(B, B_pred)
 
         return accuracy
     
-    
-    def _gradient_descent(self, X, A, H, K):
-        """
-        Perform gradient descent optimization.
-        
-        Args:
-            X: Input tensor
-            A: Matrix A
-            H: Matrix H
-            K: Ones tensor
-            alpha: learning rate
-            num_iterations: max iterations
-            epsilon: convergence threshold
-        
-        Returns:
-            Optimal X tensor
-        
-        """
-        
-        # Ensure tensors are on correct device
-        X = X.to(self.device)
-        A = A.to(self.device)
-        H = H.to(self.device)
-        K = K.to(self.device)
+    def _gradient_descent(self):
+        """ Vanilla Gradient Descent """
+        X = self.X.to(self.device)
+        A = self.A.to(self.device)
+        H = self.H.to(self.device)
+        K = self.K.to(self.device)
 
-        # Compute the gradient of the loss function with respect to X
         grad = self.gradient(X, A, H, K)
+        self.norm_history = []
+        self.time_history = []
+        self.update_history = []
 
-        # Initialize the iteration
-        i = 0
+        for _ in range(self.num_iterations):
+            if torch.linalg.norm(grad) <= self.epsilon:
+                break
 
-        # Loop for a number of iterations
-        while i < self.num_iterations and torch.norm(grad) > self.epsilon:
-
-
-            ## Step 1: start the timer
             start = time.time()
-
-            ## Step 2: update the parameters
             X = X - self.alpha * grad
-
-            ## Step 3: update the gradient of the loss function with respect to the new X
             grad = self.gradient(X, A, H, K)
-
-            ## Step 4: end the timer
             end = time.time()
 
-            ## Step 5: save the time to the history
             self.time_history.append(end - start)
+            self.norm_history.append(torch.linalg.norm(grad))
+            self.update_history.append(X.clone())
 
-            ## Step 6: save the norm to the history
-            self.norm_history.append(torch.norm(grad))
+        self.X = X
 
-            ## Step 7: store the current X
-            self.update_history.append(X)
+    def _BCDG_GS(self):
+        """ Block Coordinate Descent Gauss-Southwell """
+        X = self.X.to(self.device)
+        A = self.A.to(self.device)
+        H = self.H.to(self.device)
+        K = self.K.to(self.device)
 
-            ## Step 8: update the iteration
-            i += 1
+        grad = self.gradient(X, A, H, K)
+        norm_grad_column = torch.norm(grad, dim=0)
 
-        return X
+        self.norm_history = []
+        self.time_history = []
+        self.update_history = []
 
+        for _ in range(self.num_iterations):
+            if torch.linalg.norm(grad) <= self.epsilon:
+                break
 
+            start = time.time()
+            gs_index = torch.argmax(norm_grad_column).item()
+            gs_gradient_block_new = self.gradient_block(X, A, H, K, gs_index)
 
-    
-    def fit(self, X, A, H, K, method="GD"):
+            norm_grad_column[gs_index] = torch.linalg.norm(gs_gradient_block_new)
+            grad[:, gs_index:gs_index+1] = gs_gradient_block_new
+            X = X - self.alpha * grad
+            end = time.time()
+
+            self.time_history.append(end - start)
+            self.norm_history.append(torch.linalg.norm(grad))
+            self.update_history.append(X.clone())
+
+        self.X = X
+
+    def _BCDG_randomized(self):
+        """ Block Coordinate Descent Randomized """
+        X = self.X.to(self.device)
+        A = self.A.to(self.device)
+        H = self.H.to(self.device)
+        K = self.K.to(self.device)
+
+        grad = self.gradient(X, A, H, K)
+
+        self.norm_history = []
+        self.time_history = []
+        self.update_history = []
+
+        for _ in range(self.num_iterations):
+            if torch.linalg.norm(grad) <= self.epsilon:
+                break
+
+            start = time.time()
+            rand_index = torch.randint(0, self.j, (1,)).item()
+            random_gradient_block = self.gradient_block(X, A, H, K, rand_index)
+
+            grad[:, rand_index:rand_index+1] = random_gradient_block
+            X = X - self.alpha * grad
+            end = time.time()
+
+            self.time_history.append(end - start)
+            self.norm_history.append(torch.linalg.norm(grad))
+            self.update_history.append(X.clone())
+
+        self.X = X
+
+    def fit(self, X, A, H, K, B, M, method="GD"):
         """
         Fit the model using the specified optimization method.
-        
+
         Args:
             X: Input tensor
             A: Matrix A
             H: Matrix H
             K: Ones tensor
             method: Optimization method = ["GD", "BCGD Randomized", "BCGD Gauss-Southwell"]
-        
+
         Returns:
             Optimal X tensor
-        
         """
-        
-        # Initialize X
-        self.X = X
-        self.A = A
-        self.H = H
-        self.K = K
-        
-        
-        # Initialize history
-        self.update_history_GD = [self.X]
-        
-        # Perform optimization
+        self.X = X.to(self.device)
+        self.A = A.to(self.device)
+        self.H = H.to(self.device)
+        self.K = K.to(self.device)
+        self.B = B.to(self.device)
+        self.M = M.to(self.device)
+
+        # Reset history
+        self.norm_history = []
+        self.time_history = []
+        self.update_history = []
+
         if method == "GD":
-            self.X = self._gradient_descent(A, H, K)
-        
+            self._gradient_descent()
         elif method == "BCGD Randomized":
-            self.X = self._BCDG_randomized(A, H, K)
-        
+            self._BCDG_randomized()
         elif method == "BCGD Gauss-Southwell":
-            self.X = self._BCDG_GS(A, H, K)
-        
+            self._BCDG_GS()
         else:
             raise ValueError("Invalid optimization method")
         
-        return self.X
-    
-    def plot_convergence(self, B, M):
-        """Plot convergence history"""
-        self.B = B
-        self.M = M
         
-        self.cost_history = [self.compute_cost(X, A, H, M, K) for X in self.update_history]
+        # Compute the cost and accuracy
+        for X in self.update_history:
+            cost = self.compute_cost(X, A, H, self.M, K)
+            accuracy = self.evaluate(X, A, self.B, index_0=False)
+            self.cost_history.append(cost)
+            self.accuracy_history.append(accuracy)
 
-        self.accuracy_history = [self.evaluate(X, A, B, index_0=True) for X in self.update_history]
-    
+        return self.X
+
+
+
+
+    def plot_convergence(self):
+        """ Plot the convergence of the optimization method """
+        print(f"Final cost: {self.cost_history[-1]}")
+        print(f"Final accuracy: {self.accuracy_history[-1] * 100}%")
+        print(f"Total time: {sum(self.time_history):.4f} seconds")
         fig, ax1 = plt.subplots()
 
         color = 'tab:red'
@@ -402,22 +389,31 @@ class LogisticRegression:
         plt.title('Gradient Descent: Cost and Accuracy')
         plt.show()
     
-    
-
-
-
+        
+def Lipschitz_constant(A):
+    """ Compute the Lipschitz constant of the gradient of the loss function with respect to X. """
+    L = torch.linalg.norm(A, 2) * torch.linalg.norm(A, 'fro')
+    return L    
+        
 def main():
-    dataset = SyntheticDataset(n_samples=1000, n_features=1000, n_classes=50)
-    X, A, H, M, K, B = dataset.get_data()
+    # Dataset parameters
+    m, d, k = 1000, 1000, 50
     
+    dataset = SyntheticDataset(n_samples=m, n_features=d, n_classes=k, seed=13)
+    X_train, A, H, M, K, B = dataset.get_data()
+
+    # Hyperparameters
     lr = 1 / Lipschitz_constant(A)
+    num_iterations = 2000
+    tolerance = 1e-6
+    j = k
     
-    model = LogisticRegression(alpha=lr, num_iterations=10000, 
-                            epsilon=1e-6, j=50)
-    
-    model.fit(A, H, K, method="GD")
-    model.plot_convergence(A, B, H, M, K)
-    
-    
+    model = LogisticRegression(lr, num_iterations, tolerance, j)
+    model.fit(X_train, A, H, K, B, M, method="GD")
+    #model.fit(X_train, A, H, K, B, M, method="BCGD Randomized")
+    #model.fit(X_train, A, H, K, B, M, method="BCGD Gauss-Southwell")    
+    model.plot_convergence()
+
+
 if __name__ == "__main__":
     main()
