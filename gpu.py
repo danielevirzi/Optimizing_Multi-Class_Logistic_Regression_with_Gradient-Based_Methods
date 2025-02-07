@@ -1,11 +1,9 @@
-###### Libraries ######
-
 import time
 import torch
 import matplotlib.pyplot as plt
-#from sklearn.model_selection import train_test_split
-#from sklearn.preprocessing import StandardScaler
-#from ucimlrepo import fetch_ucirepo
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from ucimlrepo import fetch_ucirepo
 
 
 class SyntheticDataset:
@@ -64,14 +62,93 @@ class SyntheticDataset:
         """Return all dataset components"""
         return self.X_train, self.A, self.H, self.M, self.K, self.B   
     
+    
+    
+class RealDataset:
+    def __init__(self, dataset_id=80, test_size=0.2, random_state=13):
+        """
+        Initialize real dataset generator
+        
+        Args:
+            dataset_id:     dataset ID
+            test_size:      test size
+            random_state:   random state
+        """
+        self.dataset_id = dataset_id
+        self.test_size = test_size
+        self.random_state = random_state
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.k = 10
+        
+
+        # Load dataset
+        self._load_data()
+        
+        # Preprocess dataset
+        self._preprocess_data()
+        
+        # Generate dataset
+        self._generate_data()
+        
+    def _load_data(self):
+        """Load dataset"""
+        dataset = fetch_ucirepo(id=self.dataset_id)
+        self.input = dataset.data.features
+        self.label = dataset.data.targets['class']
+        self.A_train, self.A_test, self.B_train, self.B_test = train_test_split(self.input, self.label, test_size=0.2, random_state=self.random_state)
+    
+    def _preprocess_data(self):
+        """Preprocess dataset"""
+        # Standardize the dataset
+        scaler = StandardScaler()
+        self.A_train = scaler.fit_transform(self.A_train)
+        self.A_test = scaler.transform(self.A_test)
+        
+            # Convert pandas Series to numpy arrays before converting to tensors
+        self.B_train = self.B_train.to_numpy()
+        self.B_test = self.B_test.to_numpy()
+        
+        # Convert to PyTorch tensors
+        self.A_train = torch.tensor(self.A_train, dtype=torch.float32).to(self.device)
+        self.A_test = torch.tensor(self.A_test, dtype=torch.float32).to(self.device)
+        self.B_train = torch.tensor(self.B_train, dtype=torch.int64).to(self.device)
+        self.B_test = torch.tensor(self.B_test, dtype=torch.int64).to(self.device)
+    
+    def _generate_data(self):
+        """Generate dataset"""
+        # Create one-hot encoding matrix H
+        self.H_train = torch.nn.functional.one_hot(self.B_train, num_classes=self.k).float().to(self.device)
+        self.H_test = torch.nn.functional.one_hot(self.B_test, num_classes=self.k).float().to(self.device)
+        
+        # Create ones vector M
+        self.M_train = torch.ones(1, self.A_train.shape[0]).to(self.device)
+        self.M_test = torch.ones(1, self.A_test.shape[0]).to(self.device)
+        
+        # Create ones vector K
+        self.K = torch.ones(self.k, 1).to(self.device)
+        
+        # Normalize weights with Xavier initialization for X_train
+        self.X_train = torch.randn(self.A_train.shape[1], self.k).to(self.device) * torch.sqrt(torch.tensor(1 / self.A_train.shape[1]).to(self.device))
+        
+    def get_train_data(self):
+        """Return all training dataset components"""
+        return self.X_train, self.A_train, self.H_train, self.M_train, self.K, self.B_train
+    
+    def get_test_data(self):
+        """Return all test dataset components"""
+        return  self.A_test, self.H_test, self.M_test, self.B_test
+        
+    
+    
 class LogisticRegression:
-    def __init__(self, alpha, num_iterations, epsilon, j, device='cuda', seed=13):
+    def __init__(self, alpha, num_iterations, epsilon, j, device='cuda', seed=13, index_0=True):
         self.alpha = alpha
         self.num_iterations = num_iterations
         self.epsilon = epsilon
         self.j = j
         self.device = device
         self.seed = seed
+        self.index_0 = index_0
         
         torch.manual_seed(self.seed)
         torch.cuda.manual_seed(self.seed)
@@ -195,7 +272,7 @@ class LogisticRegression:
 
         return accuracy.item()
     
-    def evaluate(self, X, A, B, index_0=True):
+    def evaluate(self, X, A, B):
         """
         Evaluate the model.
         
@@ -213,7 +290,7 @@ class LogisticRegression:
         Y_pred = torch.nn.functional.softmax(A @ X, dim=0)
 
 
-        if index_0 == True:
+        if self.index_0 == True:
             # Get the index of the maximum value in each row
             B_pred = torch.argmax(Y_pred, dim=1)
 
@@ -354,22 +431,36 @@ class LogisticRegression:
             raise ValueError("Invalid optimization method")
         
         
-        # Compute the cost and accuracy
+        # Compute the training cost and accuracy
         for X in self.update_history:
             cost = self.compute_cost(X, A, H, self.M, K)
-            accuracy = self.evaluate(X, A, self.B, index_0=False)
+            accuracy = self.evaluate(X, A, self.B)
             self.cost_history.append(cost)
             self.accuracy_history.append(accuracy)
 
         return self.X
+    
+    
+    def test(self, A, H, K, B, M):
+        """ Test the model """
+        self.cost_history = []
+        self.accuracy_history = []
+        
+        for X in self.update_history:
+            cost = self.compute_cost(X, A, H, M, K)
+            accuracy = self.evaluate(X, A, B)
+            self.cost_history.append(cost)
+            self.accuracy_history.append(accuracy)
+        
+        
 
 
 
 
     def plot_convergence(self):
         """ Plot the convergence of the optimization method """
-        print(f"Final cost: {self.cost_history[-1]}")
-        print(f"Final accuracy: {self.accuracy_history[-1] * 100}%")
+        print(f"Final cost: {self.cost_history[-1]:.2f}")
+        print(f"Final accuracy: {self.accuracy_history[-1] * 100:.1f}%")
         print(f"Total time: {sum(self.time_history):.4f} seconds")
         fig, ax1 = plt.subplots()
 
@@ -394,26 +485,50 @@ def Lipschitz_constant(A):
     """ Compute the Lipschitz constant of the gradient of the loss function with respect to X. """
     L = torch.linalg.norm(A, 2) * torch.linalg.norm(A, 'fro')
     return L    
+
+def run_experiment(dataset = 'synthetic' , method = 'GD'):
+    """ 
+    Run the experiment with the specified dataset and optimization method.
+    
+    Args:
+        dataset: Dataset name = ['synthetic', "real"]']
+        method: Optimization method = ["GD", "BCGD Randomized", "BCGD Gauss-Southwell"]
+    """
+    if dataset == 'synthetic':
         
-def main():
-    # Dataset parameters
-    m, d, k = 1000, 1000, 50
+        m, d, k = 1000, 1000, 50
+        data = SyntheticDataset(n_samples=m, n_features=d, n_classes=k, seed=13)
+        X, A, H, M, K, B = data.get_data()
+        
+        lr = 1 / Lipschitz_constant(A)
+        num_iterations = 2000
+        tolerance = 1e-6
+        j = k
+        
+        model = LogisticRegression(lr, num_iterations, tolerance, j, index_0=False)
+        model.fit(X, A, H, K, B, M, method=method)
+        
+        
+    elif dataset == 'real':
+        
+        data = RealDataset(dataset_id=80, test_size=0.2, random_state=13)
+        X_train, A_train, H_train, M_train, K, B_train = data.get_train_data()
+        A_test, H_test, M_test, B_test = data.get_test_data()
+                
+        lr = 1 / Lipschitz_constant(A_train)
+        num_iterations = 2000
+        tolerance = 1e-6
+        j = data.k
+        
+        model = LogisticRegression(lr, num_iterations, tolerance, j)
+        model.fit(X_train, A_train, H_train, K, B_train, M_train, method=method)
+        model.test(A_test, H_test, K, B_test, M_test)
+        
+    else:
+        raise ValueError("Invalid dataset")    
     
-    dataset = SyntheticDataset(n_samples=m, n_features=d, n_classes=k, seed=13)
-    X_train, A, H, M, K, B = dataset.get_data()
-
-    # Hyperparameters
-    lr = 1 / Lipschitz_constant(A)
-    num_iterations = 2000
-    tolerance = 1e-6
-    j = k
     
-    model = LogisticRegression(lr, num_iterations, tolerance, j)
-    model.fit(X_train, A, H, K, B, M, method="GD")
-    #model.fit(X_train, A, H, K, B, M, method="BCGD Randomized")
-    #model.fit(X_train, A, H, K, B, M, method="BCGD Gauss-Southwell")    
     model.plot_convergence()
-
-
+        
 if __name__ == "__main__":
-    main()
+    run_experiment(dataset = 'real', method = 'GD')
