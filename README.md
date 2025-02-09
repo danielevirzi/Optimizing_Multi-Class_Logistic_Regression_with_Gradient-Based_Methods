@@ -3,10 +3,10 @@
 ## Project Structure
 
 ```
-|-- data/         # Contains dataset information and data files
-|-- cpu.ipynb     # Implementation using CPU
-|-- gpu.py        # Implementation using GPU
-|-- test.ipynb    # Validation tests to compare GPU and CPU implementations
+|-- data/                                 # Contains dataset information and data files
+|-- code/cpu/experiment.ipynb      # Implementation using CPU
+|-- code/gpu/experiment.py         # Implementation using GPU
+|-- code/test.ipynb                # Validation tests to compare GPU and CPU implementations
 |-- report.pdf    # Detailed report of results
 ```
 
@@ -24,7 +24,6 @@ $$ \tag{2} P(b_i | a_i, X) = \frac{\exp(x_{b_i}^T a_i)}{\sum_{c=1}^k\exp(x_c^T a
 
 where $x_c$ is column $c$ of the matrix parameter $X \in \mathbb{R}^{d \times k}$, and the objective is to maximize likelihood over $m$ i.i.d. training samples.
 
-## Homework
 
 1. Randomly generate a $1000 \times 1000$ matrix with entries from a $\mathcal{N}(0,1)$.
 2. Generate $b_i \in \{1, 2, \ldots, k\}$ with $k = 50$ by computing $AX + E$ where:
