@@ -4,9 +4,13 @@
 
 ```
 |-- data/                          # Contains dataset information and data files
-|-- code/cpu/experiment.ipynb      # Implementation using CPU
-|-- code/gpu/experiment.py         # Implementation using GPU
-|-- code/test.ipynb                # Validation tests to compare GPU and CPU implementations
+|-- code/                          # Directory for all code implementations
+|   |-- cpu/                          # CPU-based implementation
+|   |   |-- experiment.ipynb             # Jupyter Notebook for CPU execution
+|   |-- gpu/                           # GPU-based implementation
+|   |   |-- experiment.py                 # Python script for GPU execution
+|   |-- test/                          # Validation and testing scripts
+|   |   |-- test.ipynb                    # Notebook comparing GPU and CPU implementations
 |-- report.pdf                     # Detailed report of results
 ```
 
@@ -39,7 +43,7 @@ where $x_c$ is column $c$ of the matrix parameter $X \in \mathbb{R}^{d \times k}
 
 ## Results
 
-For detailed results and analysis on CPU Implementation, refer to the [report.pdf](./report.pdf).
-The best result we achieved is 92.3% accuracy with a training of 0.16 s with a RTX 3070.
+For detailed results and analysis on CPU Implementation, please take a look at the [report.pdf](./report.pdf).
+The best result we achieved is 92.3% accuracy with a training of 0.16 s with an RTX 3070.
 
 
