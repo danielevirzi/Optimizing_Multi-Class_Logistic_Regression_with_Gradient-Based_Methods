@@ -37,23 +37,6 @@ where $x_c$ is column $c$ of the matrix parameter $X \in \mathbb{R}^{d \times k}
 4. Choose a publicly available dataset and test the methods on it.
 5. Analyze *Accuracy vs CPU Time*.
 
-## Usage
-
-### Running the CPU Implementation
-```bash
-jupyter notebook cpu.ipynb
-```
-
-### Running the GPU Implementation
-```bash
-python gpu.py
-```
-
-### Running Tests
-```bash
-jupyter notebook test.ipynb
-```
-
 ## Results
 
 For detailed results and analysis on CPU Implementation, refer to the [report.pdf](./report.pdf).
