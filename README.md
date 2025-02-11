@@ -3,11 +3,11 @@
 ## Project Structure
 
 ```
-|-- data/                                 # Contains dataset information and data files
+|-- data/                          # Contains dataset information and data files
 |-- code/cpu/experiment.ipynb      # Implementation using CPU
 |-- code/gpu/experiment.py         # Implementation using GPU
 |-- code/test.ipynb                # Validation tests to compare GPU and CPU implementations
-|-- report.pdf    # Detailed report of results
+|-- report.pdf                     # Detailed report of results
 ```
 
 ## Task
