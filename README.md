@@ -9,8 +9,7 @@
 |   |   |-- experiment.ipynb             # Jupyter Notebook for CPU execution
 |   |-- gpu/                          # GPU-based implementation
 |   |   |-- experiment.py                # Python script for GPU execution
-|   |-- test/                         # Validation and testing scripts
-|   |   |-- test.ipynb                   # Notebook comparing GPU and CPU implementations
+|   |   test.ipynb                    # Notebook comparing GPU and CPU implementations
 |-- report.pdf                     # Detailed report of results
 ```
 
